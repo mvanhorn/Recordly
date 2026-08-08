@@ -15,37 +15,31 @@ describe("formatMarketplaceHttpError", () => {
 		expect(message).toBe(
 			"Marketplace is temporarily unavailable (HTTP 525). Please try again later.",
 		);
-		expect(message).not.toContain(html);
+		expect(message).not.toContain("SSL handshake failed");
 	});
 
-	it("keeps a short JSON error for client-side request failures", () => {
-		expect(
-			formatMarketplaceHttpError({
-				status: 400,
-				contentType: "application/json",
-				body: JSON.stringify({ error: "Invalid search query" }),
-			}),
-		).toBe("Marketplace request failed (HTTP 400): Invalid search query");
+	it("hides JSON errors for client-side request failures", () => {
+		const detail = "Invalid search query";
+		const message = formatMarketplaceHttpError({
+			status: 400,
+			contentType: "application/json",
+			body: JSON.stringify({ error: detail }),
+		});
+
+		expect(message).toBe("Marketplace request failed (HTTP 400).");
+		expect(message).not.toContain(detail);
 	});
 
-	it("uses a JSON message when an error field is absent", () => {
-		expect(
-			formatMarketplaceHttpError({
-				status: 409,
-				contentType: "application/json",
-				body: JSON.stringify({ message: "Extension version already exists" }),
-			}),
-		).toBe("Marketplace request failed (HTTP 409): Extension version already exists");
-	});
+	it("hides JSON messages when an error field is absent", () => {
+		const detail = "Extension version already exists";
+		const message = formatMarketplaceHttpError({
+			status: 409,
+			contentType: "application/json",
+			body: JSON.stringify({ message: detail }),
+		});
 
-	it("prefers a string error when both JSON detail fields are present", () => {
-		expect(
-			formatMarketplaceHttpError({
-				status: 400,
-				contentType: "application/json",
-				body: JSON.stringify({ error: "Primary detail", message: "Secondary detail" }),
-			}),
-		).toBe("Marketplace request failed (HTTP 400): Primary detail");
+		expect(message).toBe("Marketplace request failed (HTTP 409).");
+		expect(message).not.toContain(detail);
 	});
 
 	it("hides malformed JSON bodies", () => {
@@ -60,7 +54,7 @@ describe("formatMarketplaceHttpError", () => {
 		expect(message).not.toContain(body);
 	});
 
-	it("bounds long JSON details and marks truncation without splitting Unicode", () => {
+	it("hides long Unicode details from alternate JSON content types", () => {
 		const detail = `🚀${"x".repeat(200)}`;
 		const message = formatMarketplaceHttpError({
 			status: 400,
@@ -68,17 +62,19 @@ describe("formatMarketplaceHttpError", () => {
 			body: JSON.stringify({ error: detail }),
 		});
 
-		expect(message).toBe(`Marketplace request failed (HTTP 400): 🚀${"x".repeat(198)}…`);
-		expect(Array.from(message.split(": ")[1])).toHaveLength(200);
+		expect(message).toBe("Marketplace request failed (HTTP 400).");
+		expect(message).not.toContain(detail);
 	});
 
 	it("does not expose non-JSON response bodies", () => {
-		expect(
-			formatMarketplaceHttpError({
-				status: 404,
-				contentType: "text/plain",
-				body: "internal route details",
-			}),
-		).toBe("Marketplace request failed (HTTP 404).");
+		const body = "internal route details";
+		const message = formatMarketplaceHttpError({
+			status: 404,
+			contentType: "text/plain",
+			body,
+		});
+
+		expect(message).toBe("Marketplace request failed (HTTP 404).");
+		expect(message).not.toContain(body);
 	});
 });
