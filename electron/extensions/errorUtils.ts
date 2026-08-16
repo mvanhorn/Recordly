@@ -3,6 +3,31 @@ export function getErrorMessage(error: unknown): string {
 }
 
 const MAX_MARKETPLACE_ERROR_DETAIL_LENGTH = 200;
+const MARKETPLACE_UNAVAILABLE_MESSAGE =
+	"Marketplace is temporarily unavailable. Please try again later.";
+
+function isJsonContentType(contentType: string | null): boolean {
+	const mediaType = contentType?.split(";", 1)[0].trim().toLowerCase();
+	const subtype = mediaType?.split("/", 2)[1];
+
+	return mediaType === "application/json" || subtype?.endsWith("+json") === true;
+}
+
+export function normalizeMarketplaceUnavailableError(_error: unknown): Error {
+	return new Error(MARKETPLACE_UNAVAILABLE_MESSAGE);
+}
+
+export async function parseMarketplaceJsonResponse<T>(response: Response): Promise<T> {
+	try {
+		if (!isJsonContentType(response.headers.get("content-type"))) {
+			throw new Error("Marketplace response is not JSON");
+		}
+
+		return JSON.parse(await response.text()) as T;
+	} catch (error) {
+		throw normalizeMarketplaceUnavailableError(error);
+	}
+}
 
 export function formatMarketplaceHttpError({
 	status,
@@ -18,7 +43,7 @@ export function formatMarketplaceHttpError({
 	}
 
 	let detail: string | null = null;
-	if (contentType?.toLowerCase().includes("json")) {
+	if (isJsonContentType(contentType)) {
 		try {
 			const payload: unknown = JSON.parse(body);
 			if (payload && typeof payload === "object") {

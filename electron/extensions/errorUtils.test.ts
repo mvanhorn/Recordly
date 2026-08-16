@@ -1,6 +1,55 @@
 import { describe, expect, it } from "vitest";
 
-import { formatMarketplaceHttpError } from "./errorUtils";
+import {
+	formatMarketplaceHttpError,
+	normalizeMarketplaceUnavailableError,
+	parseMarketplaceJsonResponse,
+} from "./errorUtils";
+
+describe("parseMarketplaceJsonResponse", () => {
+	it.each([
+		"application/json; charset=utf-8",
+		"Application/Problem+JSON; charset=UTF-8",
+	])("returns valid JSON unchanged for %s", async (contentType) => {
+		const payload = { extensions: [{ id: "example" }], total: 1 };
+		const response = new Response(JSON.stringify(payload), {
+			headers: { "content-type": contentType },
+		});
+
+		await expect(parseMarketplaceJsonResponse(response)).resolves.toEqual(payload);
+	});
+
+	it.each([
+		["HTML", "text/html", "<!DOCTYPE html><p>upstream failure</p>"],
+		["malformed JSON", "application/json", '{"extensions":'],
+		["a non-JSON content type", "text/plain", '{"extensions":[]}'],
+		["a misleading non-JSON content type", "application/notjson", '{"extensions":[]}'],
+	])("hides %s successful responses", async (_label, contentType, body) => {
+		const response = new Response(body, { headers: { "content-type": contentType } });
+
+		const error = await parseMarketplaceJsonResponse(response).catch((caught) => caught);
+
+		expect(error).toEqual(
+			new Error("Marketplace is temporarily unavailable. Please try again later."),
+		);
+		expect(String(error)).not.toContain(body);
+		expect(String(error)).not.toContain("JSON");
+	});
+});
+
+describe("normalizeMarketplaceUnavailableError", () => {
+	it.each([
+		new TypeError("fetch failed: connect ECONNREFUSED 127.0.0.1"),
+		new DOMException("The operation was aborted", "AbortError"),
+	])("hides rejected marketplace request diagnostics", (cause) => {
+		const error = normalizeMarketplaceUnavailableError(cause);
+
+		expect(error).toEqual(
+			new Error("Marketplace is temporarily unavailable. Please try again later."),
+		);
+		expect(error.message).not.toContain(cause.message);
+	});
+});
 
 describe("formatMarketplaceHttpError", () => {
 	it("hides upstream HTML when the marketplace is unavailable", () => {

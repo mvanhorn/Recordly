@@ -12,7 +12,12 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { app } from "electron";
-import { formatMarketplaceHttpError, getErrorMessage } from "./errorUtils";
+import {
+	formatMarketplaceHttpError,
+	getErrorMessage,
+	normalizeMarketplaceUnavailableError,
+	parseMarketplaceJsonResponse,
+} from "./errorUtils";
 import { getRegisteredExtensions, installExtensionFromPath } from "./extensionLoader";
 import type {
 	ExtensionReview,
@@ -88,12 +93,17 @@ async function marketplaceFetch<T>(
 			headers["X-Admin-Key"] = key;
 		}
 
-		const response = await fetch(url, {
-			method: options.method ?? "GET",
-			headers,
-			body: options.body ? JSON.stringify(options.body) : undefined,
-			signal: controller.signal,
-		});
+		let response: Response;
+		try {
+			response = await fetch(url, {
+				method: options.method ?? "GET",
+				headers,
+				body: options.body ? JSON.stringify(options.body) : undefined,
+				signal: controller.signal,
+			});
+		} catch (error) {
+			throw normalizeMarketplaceUnavailableError(error);
+		}
 
 		if (!response.ok) {
 			const text = await response.text().catch(() => "");
@@ -106,7 +116,7 @@ async function marketplaceFetch<T>(
 			);
 		}
 
-		return (await response.json()) as T;
+		return await parseMarketplaceJsonResponse<T>(response);
 	} finally {
 		clearTimeout(timeoutId);
 	}
